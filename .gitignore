@@ -1,0 +1,35 @@
+# 消息/服务生成文件
+msg_gen/
+srv_gen/
+
+# IDE文件
+.vscode/
+.idea/
+cmake_build-*/
+compile_commands.jason/
+.clangd/
+.cache/
+
+# 运行时产物
+*.bag
+*.bag.active
+*.db3
+*.mcap
+*.log
+core
+core.*
+
+# 编辑器杂项
+*.swp
+*.seo
+.directory
+
+
+
+
+
+
+
+
+
+
