@@ -3,6 +3,14 @@
 //
 
 #pragma once
+
+// C++ std
+#include <vector>
+#include <array>
+#include <memory>
+#include <string>
+
+// ROS
 #include <controller_interface/controller.h>
 #include <hardware_interface/joint_command_interface.h>
 #include <realtime_tools/realtime_publisher.h>
@@ -15,11 +23,6 @@
 #include <nav_msgs/Odometry.h>
 #include <Eigen/Dense>
 #include <ros/ros.h>
-
-#include <vector>
-#include <array>
-#include <memory>
-#include <string>
 
 namespace hero_chassis_controller
 {
@@ -48,7 +51,7 @@ private:
   //config
   double publish_rate_{ 100 };
   double timeout_{ 0.1 };
-  std::string frame_mode{ "base" };
+  std::string frame_mode_{ "base" };
 
   double wheel_radius_{ 0.07625 }; // From rm_description_for_task/urdf/common/mecanum_wheel.urdf.xacro
   double wheel_base_{ 0.4 };       // From rm_description_for_task/urdf/hero/chassis.urdf.xacro
