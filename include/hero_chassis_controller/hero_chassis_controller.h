@@ -67,8 +67,8 @@ private:
   //state
   ros::Time last_cmd_time_;
   ros::Time last_publish_time_;
-  double odom_x{ 0.0 };
-  double odom_y{ 0.0 };
+  double odom_x_{ 0.0 };
+  double odom_y_{ 0.0 };
   double odom_theta_{ 0.0 };
 };
 }

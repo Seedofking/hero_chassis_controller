@@ -90,7 +90,7 @@ void HeroChassisController::update(const ros::Time& time, const ros::Duration& p
   geometry_msgs::Twist cmd_vel = *cmd_vel_buffer_.readFromRT();
 
   // Update: Timeout protect
-  if ((time - last_cmd_time_).toSec() > timeout_) //TODO: Who is last_cmd_time_?
+  if ((time - last_cmd_time_).toSec() > timeout_)
   {
     cmd_vel.linear.x = 0;
     cmd_vel.linear.y = 0;
@@ -99,6 +99,7 @@ void HeroChassisController::update(const ros::Time& time, const ros::Duration& p
 
   // Update: Mecanum wheel inverse kinematics
   std::array<double, 4> target_wheels_velocity{};
+  std::array<double, 4> measured_wheels_velocity{};
   const double L = (wheel_base_ + wheel_track_) / 2;
 
   target_wheels_velocity[kLeftFront] = (cmd_vel.linear.x - cmd_vel.linear.y - cmd_vel.angular.z * L) / wheel_radius_;
@@ -106,13 +107,64 @@ void HeroChassisController::update(const ros::Time& time, const ros::Duration& p
   target_wheels_velocity[kLeftBack] = (cmd_vel.linear.x + cmd_vel.linear.y - cmd_vel.angular.z * L) / wheel_radius_;
   target_wheels_velocity[kRightBack] = (cmd_vel.linear.x - cmd_vel.linear.y + cmd_vel.angular.z * L) / wheel_radius_;
 
-  // Update: Turn velocity target to effort target with pid
+  // Update: Turn target velocity to target effort using pid
   for (int joints_index = 0; joints_index < 4; joints_index++)
   {
-    const double target_wheel_velocity = target_wheels_velocity[joints_index];
-    const double measured_wheel_velocity = joints_[joints_index].getVelocity();
-    const double error = target_wheel_velocity - measured_wheel_velocity;
+    measured_wheels_velocity[joints_index] = joints_[joints_index].getVelocity();
+    const double error = target_wheels_velocity[joints_index] - measured_wheels_velocity[joints_index];
     joints_[joints_index].setCommand(pids_[joints_index].computeCommand(error, period));
+  }
+
+  // Update: Turn measured velocity to odometry
+  const double w_lf = measured_wheels_velocity[kLeftFront];
+  const double w_rf = measured_wheels_velocity[kRightFront];
+  const double w_lb = measured_wheels_velocity[kLeftBack];
+  const double w_rb = measured_wheels_velocity[kRightBack];
+
+  const double base_vx = (w_lf + w_rf + w_lb + w_rb) * wheel_radius_ / 4;
+  const double base_vy = (-w_lf + w_rf + w_lb - w_rb) * wheel_radius_ / 4;
+  const double base_wz = (-w_lf + w_rf - w_lb + w_rb) * wheel_radius_ / 4 / L;
+
+  const double dt = period.toSec();
+  const double odom_wz = base_wz;
+  const double d_theta = odom_wz * dt;
+  const double mid_theta = odom_theta_ + d_theta / 2;
+  odom_x_ += (base_vx * std::cos(mid_theta) - base_vy * std::sin(mid_theta)) * dt;
+  odom_y_ += (base_vx * std::cos(mid_theta) + base_vy * std::sin(mid_theta)) * dt;
+  odom_theta_ += d_theta;
+
+  // Update: Publish odometry and twist
+  if (odom_pub_->trylock())
+  {
+    odom_pub_->msg_.header.stamp = time;
+    odom_pub_->msg_.header.frame_id = "odom";
+    odom_pub_->msg_.child_frame_id = "base_link";
+
+    odom_pub_->msg_.pose.pose.position.x = odom_x_;
+    odom_pub_->msg_.pose.pose.position.y = odom_y_;
+
+    odom_pub_->msg_.pose.pose.orientation.z = sin(odom_theta_ / 2);
+    odom_pub_->msg_.pose.pose.orientation.w = cos(odom_theta_ / 2);
+
+    odom_pub_->msg_.twist.twist.linear.x = base_vx;
+    odom_pub_->msg_.twist.twist.linear.y = base_vy;
+    odom_pub_->msg_.twist.twist.angular.z = base_wz;
+
+    odom_pub_->unlockAndPublish();
+  }
+
+  // Update: Broadcast transform
+  if ((time - last_publish_time_).toSec() > 1.0 / publish_rate_)
+  {
+    geometry_msgs::TransformStamped tf;
+    tf.header.stamp = time;
+    tf.header.frame_id = "odom";
+    tf.child_frame_id = "base_link";
+    tf.transform.translation.x = odom_x_;
+    tf.transform.translation.y = odom_y_;
+    tf.transform.rotation.z = sin(odom_theta_ / 2);
+    tf.transform.rotation.z = cos(odom_theta_ / 2);
+    tf2_broadcaster_->sendTransform(tf);
   }
 }
 
