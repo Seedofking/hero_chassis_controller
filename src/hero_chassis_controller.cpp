@@ -13,7 +13,6 @@
 // ROS depends
 #include <geometry_msgs/Twist.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
-#include <tf2/LinearMath/Quaternion.h>
 #include <pluginlib/class_list_macros.h>
 
 namespace hero_chassis_controller
@@ -70,6 +69,17 @@ bool HeroChassisController::init(hardware_interface::EffortJointInterface* hw,
       return false;
     }
   }
+
+  // Init: Initialize odometry publisher, tf broadcaster, cmd_vel subscriber
+  odom_pub_ = std::make_unique<realtime_tools::RealtimePublisher<nav_msgs::Odometry>>
+      (root_nh, "odom", 100);
+  odom_pub_->msg_.header.frame_id = "odom";
+  odom_pub_->msg_.child_frame_id = "base_link";
+  tf2_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>();
+
+  cmd_vel_sub_ = root_nh.subscribe<geometry_msgs::Twist::ConstPtr>
+      ("cmd_vel", 100, &HeroChassisController::cmdVelCallback, this);
+
   return true;
 }
 
@@ -83,7 +93,7 @@ void HeroChassisController::update(const ros::Time& time, const ros::Duration& p
   if ((time - last_cmd_time_).toSec() > timeout_) //TODO: Who is last_cmd_time_?
   {
     cmd_vel.linear.x = 0;
-    cmd_vel.linear.x = 0;
+    cmd_vel.linear.y = 0;
     cmd_vel.angular.z = 0;
   }
 
@@ -108,10 +118,15 @@ void HeroChassisController::update(const ros::Time& time, const ros::Duration& p
 
 void HeroChassisController::starting(const ros::Time& time)
 {
+  // Starting : Initialize time
+  last_cmd_time_ = ros::Time::now();
+  last_publish_time_ = ros::Time::now();
 }
 
-void HeroChassisController::cmdVelCallback(geometry_msgs::Twist::ConstPtr msg)
+void HeroChassisController::cmdVelCallback(const geometry_msgs::Twist::ConstPtr msg)
 {
+  cmd_vel_buffer_.writeFromNonRT(*msg);
+  last_cmd_time_ = ros::Time::now();
 }
 } // namespace hero_chassis_controller
 

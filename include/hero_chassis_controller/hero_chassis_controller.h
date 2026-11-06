@@ -21,7 +21,7 @@
 #include <tf2_ros/transform_broadcaster.h>
 #include <geometry_msgs/Twist.h>
 #include <nav_msgs/Odometry.h>
-#include <Eigen/Dense>
+//#include <Eigen/Dense>  TODO: Turn to matrix
 #include <ros/ros.h>
 
 namespace hero_chassis_controller
@@ -41,7 +41,7 @@ private:
   std::vector<hardware_interface::JointHandle> joints_;
   std::array<control_toolbox::Pid, 4> pids_;
   realtime_tools::RealtimeBuffer<geometry_msgs::Twist> cmd_vel_buffer_;
-  Eigen::Matrix<double, 4, 3> jacobian_;
+  //Eigen::Matrix<double, 4, 3> jacobian_; TODO: Turn to matrix
   std::unique_ptr<realtime_tools::RealtimePublisher<nav_msgs::Odometry>> odom_pub_;
   std::unique_ptr<tf2_ros::Buffer> tf2_buffer_;
   std::unique_ptr<tf2_ros::TransformListener> tf2_listener_;
