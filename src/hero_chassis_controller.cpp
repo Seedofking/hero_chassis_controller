@@ -8,8 +8,10 @@
 // C++ std depends
 #include <array>
 #include <vector>
+#include <string>
 
 // ROS depends
+#include <geometry_msgs/Twist.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <pluginlib/class_list_macros.h>
@@ -44,13 +46,13 @@ bool HeroChassisController::init(hardware_interface::EffortJointInterface* hw,
     ROS_ERROR("The number of joints isn't 4 (namespace: %s)", controller_nh.getNamespace().c_str());
     return false;
   }
-  for (int joints_index = 0; joints_index < 4; joints_index++)
+  for (size_t joints_index = 0; joints_index < 4; joints_index++)
   {
     try
     {
       joints_.push_back(hw->getHandle(joints_name[joints_index]));
     }
-    catch (const hardware_interface::HardwareInterfaceException e)
+    catch (const hardware_interface::HardwareInterfaceException& e)
     {
       ROS_ERROR_STREAM("Failed to get joint handle for joint "
           << joints_name[joints_index] <<"( " << e.what() << " )");
@@ -59,7 +61,7 @@ bool HeroChassisController::init(hardware_interface::EffortJointInterface* hw,
   }
 
   // Init: Get params from controllers.yaml for pid init
-  for (int joints_index = 0; joints_index < 4; joints_index++)
+  for (size_t joints_index = 0; joints_index < 4; joints_index++)
   {
     if (!pids_[joints_index].init(ros::NodeHandle(controller_nh, "wheel/" + joints_name[joints_index])))
     {
@@ -68,20 +70,38 @@ bool HeroChassisController::init(hardware_interface::EffortJointInterface* hw,
       return false;
     }
   }
+  return true;
 }
 
 //Update
 void HeroChassisController::update(const ros::Time& time, const ros::Duration& period)
 {
-  //TODO: Read from RT
-  //TODO: mecanum swift
-  std::array<double, 4> target_velocities{ 0 };
+  // Update: Read cmd form RT
+  geometry_msgs::Twist cmd_vel = *cmd_vel_buffer_.readFromRT();
+
+  // Update: Timeout protect
+  if ((time - last_cmd_time_).toSec() > timeout_) //TODO: Who is last_cmd_time_?
+  {
+    cmd_vel.linear.x = 0;
+    cmd_vel.linear.x = 0;
+    cmd_vel.angular.z = 0;
+  }
+
+  // Update: Mecanum wheel inverse kinematics
+  std::array<double, 4> target_wheels_velocity{};
+  const double L = (wheel_base_ + wheel_track_) / 2;
+
+  target_wheels_velocity[kLeftFront] = (cmd_vel.linear.x - cmd_vel.linear.y - cmd_vel.angular.z * L) / wheel_radius_;
+  target_wheels_velocity[kRightFront] = (cmd_vel.linear.x + cmd_vel.linear.y + cmd_vel.angular.z * L) / wheel_radius_;
+  target_wheels_velocity[kLeftBack] = (cmd_vel.linear.x + cmd_vel.linear.y - cmd_vel.angular.z * L) / wheel_radius_;
+  target_wheels_velocity[kRightBack] = (cmd_vel.linear.x - cmd_vel.linear.y + cmd_vel.angular.z * L) / wheel_radius_;
+
   // Update: Turn velocity target to effort target with pid
   for (int joints_index = 0; joints_index < 4; joints_index++)
   {
-    const double target_velocity = target_velocities[joints_index];
-    const double measured_velocity = joints_[joints_index].getVelocity();
-    const double error = target_velocity - measured_velocity;
+    const double target_wheel_velocity = target_wheels_velocity[joints_index];
+    const double measured_wheel_velocity = joints_[joints_index].getVelocity();
+    const double error = target_wheel_velocity - measured_wheel_velocity;
     joints_[joints_index].setCommand(pids_[joints_index].computeCommand(error, period));
   }
 }
@@ -93,4 +113,6 @@ void HeroChassisController::starting(const ros::Time& time)
 void HeroChassisController::cmdVelCallback(geometry_msgs::Twist::ConstPtr msg)
 {
 }
-}
+} // namespace hero_chassis_controller
+
+PLUGINLIB_EXPORT_CLASS(hero_chassis_controller::HeroChassisController, controller_interface::ControllerBase);
