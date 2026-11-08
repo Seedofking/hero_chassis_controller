@@ -2,7 +2,7 @@ controller:
   hero_chassis_controller:
     type: hero_chassis_controller/HeroChassisController
     publish_rate: 100
-    timeout: 0.1
+    timeout: 0.5
     frame_mode: base
     wheel_radius: 0.07625 #/rm_description_for_task/urdf/common/mecanum_wheel.urdf.xacro
     wheel_base: 0.4 #/rm_description_for_task/urdf/hero/chassis.urdf.xacro
@@ -11,10 +11,10 @@ controller:
               left_back_wheel_joint, right_back_wheel_joint ]
 
     wheel:
-      left_front_wheel_joint: { p: 0.5, i: 0, d: 0, i_clamp_max: 0, i_clamp_min: 0, antiwindup: true, publish_state: true }
-      right_front_wheel_joint: { p: 0.5, i: 0, d: 0, i_clamp_max: 0, i_clamp_min: 0, antiwindup: true, publish_state: true }
-      left_back_wheel_joint: { p: 0.5, i: 0, d: 0, i_clamp_max: 0, i_clamp_min: 0, antiwindup: true, publish_state: true }
-      right_back_wheel_joint: { p: 0.5, i: 0, d: 0, i_clamp_max: 0, i_clamp_min: 0, antiwindup: true, publish_state: true }
+      left_front_wheel_joint: { p: 1.5, i: 0.2, d: 0, i_clamp_max: 1, i_clamp_min: -1, antiwindup: true, publish_state: true }
+      right_front_wheel_joint: { p: 1.5, i: 0.2, d: 0, i_clamp_max: 1, i_clamp_min: -1, antiwindup: true, publish_state: true }
+      left_back_wheel_joint: { p: 1.5, i: 0.2, d: 0, i_clamp_max: 1, i_clamp_min: -1, antiwindup: true, publish_state: true }
+      right_back_wheel_joint: { p: 1.5, i: 0.2, d: 0, i_clamp_max: 1, i_clamp_min: -1, antiwindup: true, publish_state: true }
 
   joint_state_controller:
     type: joint_state_controller/JointStateController

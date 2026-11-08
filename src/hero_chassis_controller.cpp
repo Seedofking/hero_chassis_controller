@@ -14,6 +14,7 @@
 #include <geometry_msgs/Twist.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <pluginlib/class_list_macros.h>
+#include <angles/angles.h>
 
 namespace hero_chassis_controller
 {
@@ -130,32 +131,33 @@ void HeroChassisController::update(const ros::Time& time, const ros::Duration& p
   const double d_theta = odom_wz * dt;
   const double mid_theta = odom_theta_ + d_theta / 2;
   odom_x_ += (base_vx * std::cos(mid_theta) - base_vy * std::sin(mid_theta)) * dt;
-  odom_y_ += (base_vx * std::cos(mid_theta) + base_vy * std::sin(mid_theta)) * dt;
-  odom_theta_ += d_theta;
+  odom_y_ += (base_vx * std::sin(mid_theta) + base_vy * std::cos(mid_theta)) * dt;
+  odom_theta_ = angles::normalize_angle(odom_theta_ + d_theta);
 
-  // Update: Publish odometry and twist
-  if (odom_pub_->trylock())
-  {
-    odom_pub_->msg_.header.stamp = time;
-    odom_pub_->msg_.header.frame_id = "odom";
-    odom_pub_->msg_.child_frame_id = "base_link";
-
-    odom_pub_->msg_.pose.pose.position.x = odom_x_;
-    odom_pub_->msg_.pose.pose.position.y = odom_y_;
-
-    odom_pub_->msg_.pose.pose.orientation.z = sin(odom_theta_ / 2);
-    odom_pub_->msg_.pose.pose.orientation.w = cos(odom_theta_ / 2);
-
-    odom_pub_->msg_.twist.twist.linear.x = base_vx;
-    odom_pub_->msg_.twist.twist.linear.y = base_vy;
-    odom_pub_->msg_.twist.twist.angular.z = base_wz;
-
-    odom_pub_->unlockAndPublish();
-  }
-
-  // Update: Broadcast transform
+  // Update: Publish
   if ((time - last_publish_time_).toSec() > 1.0 / publish_rate_)
   {
+    // Update: Publish odometry and twist
+    if (odom_pub_->trylock())
+    {
+      odom_pub_->msg_.header.stamp = time;
+      odom_pub_->msg_.header.frame_id = "odom";
+      odom_pub_->msg_.child_frame_id = "base_link";
+
+      odom_pub_->msg_.pose.pose.position.x = odom_x_;
+      odom_pub_->msg_.pose.pose.position.y = odom_y_;
+
+      odom_pub_->msg_.pose.pose.orientation.z = sin(odom_theta_ / 2);
+      odom_pub_->msg_.pose.pose.orientation.w = cos(odom_theta_ / 2);
+
+      odom_pub_->msg_.twist.twist.linear.x = base_vx;
+      odom_pub_->msg_.twist.twist.linear.y = base_vy;
+      odom_pub_->msg_.twist.twist.angular.z = base_wz;
+
+      odom_pub_->unlockAndPublish();
+    }
+
+    // Update: Broadcast transform
     geometry_msgs::TransformStamped tf;
     tf.header.stamp = time;
     tf.header.frame_id = "odom";
@@ -163,8 +165,9 @@ void HeroChassisController::update(const ros::Time& time, const ros::Duration& p
     tf.transform.translation.x = odom_x_;
     tf.transform.translation.y = odom_y_;
     tf.transform.rotation.z = sin(odom_theta_ / 2);
-    tf.transform.rotation.z = cos(odom_theta_ / 2);
+    tf.transform.rotation.w = cos(odom_theta_ / 2);
     tf2_broadcaster_->sendTransform(tf);
+    last_publish_time_ = time;
   }
 }
 
@@ -173,6 +176,11 @@ void HeroChassisController::starting(const ros::Time& time)
   // Starting : Initialize time
   last_cmd_time_ = ros::Time::now();
   last_publish_time_ = ros::Time::now();
+
+  for (size_t joints_index = 0; joints_index < 4; joints_index++)
+  {
+    pids_[joints_index].reset();
+  }
 }
 
 void HeroChassisController::cmdVelCallback(const geometry_msgs::Twist::ConstPtr msg)

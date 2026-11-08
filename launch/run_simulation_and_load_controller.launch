@@ -1,14 +1,15 @@
 <launch>
 
-    <include file="${find rm_description_for_task}/launch/hero.launch">
+    <include file="$(find rm_description_for_task)/launch/hero.launch">
         <arg name="load_chassis" value="true"/>
         <arg name="paused" value="false"/>
         <arg name="roller_type" value="simple"/>
     </include>
 
-    <rosparam file="{find hero_chassis_controller}/config/controllers.yaml"/>
+    <rosparam file="$(find hero_chassis_controller)/config/controllers.yaml"/>
 
     <node name="controller_spawner" pkg="controller_manager" type="spawner" respawn="false"
           output="screen" args="controller/hero_chassis_controller controller/joint_state_controller"/>
-    
+    <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher"/>
+
 </launch>

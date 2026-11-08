@@ -1,8 +1,9 @@
 <launch>
 
-    <rosparam file="{find hero_chassis_controller}/config/controllers.yaml"/>
+    <rosparam file="$(find hero_chassis_controller)/config/controllers.yaml"/>
 
     <node name="controller_spawner" pkg="controller_manager" type="spawner" respawn="false"
           output="screen" args="controller/hero_chassis_controller controller/joint_state_controller"/>
+    <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher"/>
 
 </launch>
