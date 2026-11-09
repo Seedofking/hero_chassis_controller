@@ -21,7 +21,7 @@
 #include <tf2_ros/transform_broadcaster.h>
 #include <geometry_msgs/Twist.h>
 #include <nav_msgs/Odometry.h>
-//#include <Eigen/Dense>  TODO: Turn to matrix
+#include <Eigen/Dense>
 #include <ros/ros.h>
 
 namespace hero_chassis_controller
@@ -41,7 +41,7 @@ private:
   std::vector<hardware_interface::JointHandle> joints_;
   std::array<control_toolbox::Pid, 4> pids_;
   realtime_tools::RealtimeBuffer<geometry_msgs::Twist> cmd_vel_buffer_;
-  //Eigen::Matrix<double, 4, 3> jacobian_; TODO: Turn to matrix
+  Eigen::Matrix<double, 4, 3> jacobian_;
   std::unique_ptr<realtime_tools::RealtimePublisher<nav_msgs::Odometry>> odom_pub_;
   std::unique_ptr<tf2_ros::Buffer> tf2_buffer_;
   std::unique_ptr<tf2_ros::TransformListener> tf2_listener_;
@@ -55,8 +55,8 @@ private:
   bool use_velocity_ramp_{ true };
   double velocity_ramp_step_{ 0.002 };
   double wheel_radius_{ 0.07625 }; // From rm_description_for_task/urdf/common/mecanum_wheel.urdf.xacro
-  double wheel_base_{ 0.4 };       // From rm_description_for_task/urdf/hero/chassis.urdf.xacro
-  double wheel_track_{ 0.4 };      // From rm_description_for_task/urdf/hero/chassis.urdf.xacro
+  std::array<std::array<double, 3>, 4> poses_{};
+
   enum WheelIndex : size_t
   {
     kLeftFront = 0,
@@ -65,6 +65,12 @@ private:
     kRightBack = 3
   };
 
+  enum PoseIndex : size_t
+  {
+    kPoseX = 0,
+    kPoseY = 1,
+    kPoseRollerAngle = 2
+  };
 
   //state
   ros::Time last_cmd_time_;

@@ -28,15 +28,13 @@ bool HeroChassisController::init(hardware_interface::EffortJointInterface* hw,
       !controller_nh.getParam("frame_mode", frame_mode_) ||
       !controller_nh.getParam("use_velocity_ramp", use_velocity_ramp_) ||
       !controller_nh.getParam("velocity_ramp_step", velocity_ramp_step_) ||
-      !controller_nh.getParam("wheel_radius", wheel_radius_) ||
-      !controller_nh.getParam("wheel_base", wheel_base_) ||
-      !controller_nh.getParam("wheel_track", wheel_track_))
+      !controller_nh.getParam("wheel_radius", wheel_radius_))
   {
     ROS_ERROR("Some chassis params doesn't given (namespace: %s)", controller_nh.getNamespace().c_str());
     return false;
   }
 
-  // Init: Get JointHandle from controllers.yaml for joints
+  // Init: Joints init
   std::vector<std::string> joints_name;
   if (!controller_nh.getParam("joints", joints_name))
   {
@@ -48,8 +46,10 @@ bool HeroChassisController::init(hardware_interface::EffortJointInterface* hw,
     ROS_ERROR("The number of joints isn't 4 (namespace: %s)", controller_nh.getNamespace().c_str());
     return false;
   }
+
   for (size_t joints_index = 0; joints_index < 4; joints_index++)
   {
+    // Get JointHandle from controllers.yaml for joints
     try
     {
       joints_.push_back(hw->getHandle(joints_name[joints_index]));
@@ -60,17 +60,35 @@ bool HeroChassisController::init(hardware_interface::EffortJointInterface* hw,
           << joints_name[joints_index] <<"( " << e.what() << " )");
       return false;
     }
-  }
 
-  // Init: Get params from controllers.yaml for pid init
-  for (size_t joints_index = 0; joints_index < 4; joints_index++)
-  {
-    if (!pids_[joints_index].init(ros::NodeHandle(controller_nh, "wheel/" + joints_name[joints_index])))
+    // Get params from controllers.yaml for pid init and wheel pose
+    std::string wheel_prefix = "wheel/" + joints_name[joints_index];
+    XmlRpc::XmlRpcValue pose;
+    if (!pids_[joints_index].init(ros::NodeHandle(controller_nh, wheel_prefix + "/pid")))
     {
       ROS_ERROR_STREAM("Failed to let pid init for joint "
           << joints_name[joints_index] << "(namespace: " << controller_nh.getNamespace() << ")");
       return false;
     }
+    if (!controller_nh.getParam(wheel_prefix + "/pose", pose))
+    {
+      ROS_ERROR_STREAM("Failed to let pose init for joint "
+          << joints_name[joints_index] << "(namespace: " << controller_nh.getNamespace() << ")");
+      return false;
+    }
+    poses_[joints_index][kPoseX] = pose["x"];
+    poses_[joints_index][kPoseY] = pose["y"];
+    poses_[joints_index][kPoseRollerAngle] = pose["roller_angle"];
+
+    // Set matrix for kinematics
+    Eigen::Matrix<double, 1, 2> in_roller_matrix{};
+    Eigen::Matrix<double, 2, 3> in_chassis_matrix{};
+    in_roller_matrix << 1, tan(static_cast<double>(pose["roller_angle"]));
+    in_chassis_matrix << 1, 0, -static_cast<double>(pose["y"]),
+        0, 1, static_cast<double>(pose["x"]);
+
+    Eigen::Matrix<double, 1, 3> chassis2joint_matrix = in_roller_matrix * in_chassis_matrix * (1 / wheel_radius_);
+    jacobian_.row(static_cast<long>(joints_index)) = chassis2joint_matrix;
   }
 
   // Init: Initialize odometry publisher, tf broadcaster, cmd_vel subscriber
@@ -162,14 +180,18 @@ void HeroChassisController::update(const ros::Time& time, const ros::Duration& p
   }
 
   // Update: Mecanum wheel inverse kinematics
-  std::array<double, 4> target_wheels_velocity{};
+  Eigen::Vector4d target_wheels_velocity{};
+  Eigen::Vector3d cmd_chassis_velocity{};
   std::array<double, 4> measured_wheels_velocity{};
-  const double L = (wheel_base_ + wheel_track_) / 2;
 
-  target_wheels_velocity[kLeftFront] = (cmd_vel.linear.x - cmd_vel.linear.y - cmd_vel.angular.z * L) / wheel_radius_;
-  target_wheels_velocity[kRightFront] = (cmd_vel.linear.x + cmd_vel.linear.y + cmd_vel.angular.z * L) / wheel_radius_;
-  target_wheels_velocity[kLeftBack] = (cmd_vel.linear.x + cmd_vel.linear.y - cmd_vel.angular.z * L) / wheel_radius_;
-  target_wheels_velocity[kRightBack] = (cmd_vel.linear.x - cmd_vel.linear.y + cmd_vel.angular.z * L) / wheel_radius_;
+  cmd_chassis_velocity << cmd_vel.linear.x, cmd_vel.linear.y, cmd_vel.angular.z;
+  target_wheels_velocity = jacobian_ * cmd_chassis_velocity;
+
+  // Update: Max wheel velocity limitation
+  if (target_wheels_velocity.maxCoeff() > 50)
+  {
+    target_wheels_velocity *= 50 / target_wheels_velocity.maxCoeff();
+  }
 
   // Update: Turn target velocity to target effort using pid
   for (int joints_index = 0; joints_index < 4; joints_index++)
@@ -180,14 +202,20 @@ void HeroChassisController::update(const ros::Time& time, const ros::Duration& p
   }
 
   // Update: Turn measured velocity to odometry
-  const double w_lf = measured_wheels_velocity[kLeftFront];
-  const double w_rf = measured_wheels_velocity[kRightFront];
-  const double w_lb = measured_wheels_velocity[kLeftBack];
-  const double w_rb = measured_wheels_velocity[kRightBack];
+  Eigen::Matrix<double, 4, 1> measured_wheels_velocity_matrix{};
+  Eigen::Matrix<double, 3, 1> base_velocity_matrix{};
+  base_velocity_matrix.setZero();
+  measured_wheels_velocity_matrix <<
+      measured_wheels_velocity[kLeftFront],
+      measured_wheels_velocity[kRightFront],
+      measured_wheels_velocity[kLeftBack],
+      measured_wheels_velocity[kRightBack];
 
-  const double base_vx = (w_lf + w_rf + w_lb + w_rb) * wheel_radius_ / 4;
-  const double base_vy = (-w_lf + w_rf + w_lb - w_rb) * wheel_radius_ / 4;
-  const double base_wz = (-w_lf + w_rf - w_lb + w_rb) * wheel_radius_ / 4 / L;
+  base_velocity_matrix =
+      (jacobian_.transpose() * jacobian_).inverse() * jacobian_.transpose() * measured_wheels_velocity_matrix;
+  double base_vx = base_velocity_matrix[0];
+  double base_vy = base_velocity_matrix[1];
+  double base_wz = base_velocity_matrix[2];
 
   const double dt = period.toSec();
   const double odom_wz = base_wz;
