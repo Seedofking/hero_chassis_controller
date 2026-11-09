@@ -104,6 +104,44 @@ void HeroChassisController::update(const ros::Time& time, const ros::Duration& p
   }
 
   // Update: Transform cmd_vel to world under frame_mode_ = "world"
+  switchFrameMode(cmd_vel);
+
+  // Update: Velocity ramp
+  setVelocityRamp(cmd_vel);
+
+  // Update: Mecanum wheel kinematics and pid
+  std::array<double, 4> target_wheels_velocity{};
+  std::array<double, 4> measured_wheels_velocity{};
+  const double L = (wheel_base_ + wheel_track_) / 2;
+  moveJoint(target_wheels_velocity, measured_wheels_velocity, period, cmd_vel);
+
+  // Update: Turn measured velocity to odometry
+  updateOdom(measured_wheels_velocity, period);
+
+  // Update: Publish
+  publishOdomTf(time);
+}
+
+void HeroChassisController::starting(const ros::Time& time)
+{
+  // Starting : Initialize time
+  last_cmd_time_ = ros::Time::now();
+  last_publish_time_ = ros::Time::now();
+
+  for (size_t joints_index = 0; joints_index < 4; joints_index++)
+  {
+    pids_[joints_index].reset();
+  }
+}
+
+void HeroChassisController::cmdVelCallback(const geometry_msgs::Twist::ConstPtr msg)
+{
+  cmd_vel_buffer_.writeFromNonRT(*msg);
+  last_cmd_time_ = ros::Time::now();
+}
+
+void HeroChassisController::switchFrameMode(geometry_msgs::Twist& cmd_vel)
+{
   if (frame_mode_ == "world")
   {
     try
@@ -126,8 +164,10 @@ void HeroChassisController::update(const ros::Time& time, const ros::Duration& p
       cmd_vel.angular.z = 0;
     }
   }
+}
 
-  // Update: Velocity ramp
+void HeroChassisController::setVelocityRamp(geometry_msgs::Twist& cmd_vel)
+{
   if (use_velocity_ramp_)
   {
     std::array<double, 3> cmd_vel_input{ cmd_vel.linear.x, cmd_vel.linear.y, cmd_vel.angular.z };
@@ -160,12 +200,12 @@ void HeroChassisController::update(const ros::Time& time, const ros::Duration& p
     cmd_vel.linear.y = last_cmd_vel_output[1];
     cmd_vel.angular.z = last_cmd_vel_output[2];
   }
+}
 
-  // Update: Mecanum wheel inverse kinematics
-  std::array<double, 4> target_wheels_velocity{};
-  std::array<double, 4> measured_wheels_velocity{};
-  const double L = (wheel_base_ + wheel_track_) / 2;
-
+void HeroChassisController::moveJoint(std::array<double, 4>& target_wheels_velocity,
+                                      std::array<double, 4>& measured_wheels_velocity,
+                                      const ros::Duration period, geometry_msgs::Twist& cmd_vel)
+{
   target_wheels_velocity[kLeftFront] = (cmd_vel.linear.x - cmd_vel.linear.y - cmd_vel.angular.z * L) / wheel_radius_;
   target_wheels_velocity[kRightFront] = (cmd_vel.linear.x + cmd_vel.linear.y + cmd_vel.angular.z * L) / wheel_radius_;
   target_wheels_velocity[kLeftBack] = (cmd_vel.linear.x + cmd_vel.linear.y - cmd_vel.angular.z * L) / wheel_radius_;
@@ -178,8 +218,11 @@ void HeroChassisController::update(const ros::Time& time, const ros::Duration& p
     const double error = target_wheels_velocity[joints_index] - measured_wheels_velocity[joints_index];
     joints_[joints_index].setCommand(pids_[joints_index].computeCommand(error, period));
   }
+}
 
-  // Update: Turn measured velocity to odometry
+void HeroChassisController::updateOdom(const std::array<double, 4>& measured_wheels_velocity,
+                                       const ros::Duration period)
+{
   const double w_lf = measured_wheels_velocity[kLeftFront];
   const double w_rf = measured_wheels_velocity[kRightFront];
   const double w_lb = measured_wheels_velocity[kLeftBack];
@@ -196,8 +239,10 @@ void HeroChassisController::update(const ros::Time& time, const ros::Duration& p
   odom_x_ += (base_vx * std::cos(mid_theta) - base_vy * std::sin(mid_theta)) * dt;
   odom_y_ += (base_vx * std::sin(mid_theta) + base_vy * std::cos(mid_theta)) * dt;
   odom_theta_ = angles::normalize_angle(odom_theta_ + d_theta);
+}
 
-  // Update: Publish
+void HeroChassisController::publishOdomTf(ros::Time time)
+{
   if ((time - last_publish_time_).toSec() > 1.0 / publish_rate_)
   {
     // Update: Publish odometry and twist
@@ -232,24 +277,6 @@ void HeroChassisController::update(const ros::Time& time, const ros::Duration& p
     tf2_broadcaster_->sendTransform(tf);
     last_publish_time_ = time;
   }
-}
-
-void HeroChassisController::starting(const ros::Time& time)
-{
-  // Starting : Initialize time
-  last_cmd_time_ = ros::Time::now();
-  last_publish_time_ = ros::Time::now();
-
-  for (size_t joints_index = 0; joints_index < 4; joints_index++)
-  {
-    pids_[joints_index].reset();
-  }
-}
-
-void HeroChassisController::cmdVelCallback(const geometry_msgs::Twist::ConstPtr msg)
-{
-  cmd_vel_buffer_.writeFromNonRT(*msg);
-  last_cmd_time_ = ros::Time::now();
 }
 } // namespace hero_chassis_controller
 

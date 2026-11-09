@@ -36,6 +36,13 @@ public:
 
 private:
   void cmdVelCallback(geometry_msgs::Twist::ConstPtr msg);
+  void switchFrameMode(geometry_msgs::Twist& cmd_vel);
+  void setVelocityRamp(geometry_msgs::Twist& cmd_vel);
+  void moveJoint(std::array<double, 4>& target_wheels_velocity,
+                 std::array<double, 4>& measured_wheels_velocity,
+                 ros::Duration period, geometry_msgs::Twist& cmd_vel);
+  void updateOdom(const std::array<double, 4>& measured_wheels_velocity, ros::Duration period);
+  void publishOdomTf(ros::Time time);
 
   //resource
   std::vector<hardware_interface::JointHandle> joints_;
