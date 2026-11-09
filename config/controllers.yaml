@@ -3,7 +3,9 @@ controller:
     type: hero_chassis_controller/HeroChassisController
     publish_rate: 100
     timeout: 0.5
-    frame_mode: base
+    frame_mode: world
+    use_velocity_ramp: true
+    velocity_ramp_step: 0.002
     wheel_radius: 0.07625 #/rm_description_for_task/urdf/common/mecanum_wheel.urdf.xacro
     wheel_base: 0.4 #/rm_description_for_task/urdf/hero/chassis.urdf.xacro
     wheel_track: 0.4  #/rm_description_for_task/urdf/hero/chassis.urdf.xacro

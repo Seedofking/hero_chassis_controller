@@ -52,6 +52,8 @@ private:
   double publish_rate_{ 100 };
   double timeout_{ 0.1 };
   std::string frame_mode_{ "base" };
+  bool use_velocity_ramp_{ true };
+  double velocity_ramp_step_{ 0.002 };
   double wheel_radius_{ 0.07625 }; // From rm_description_for_task/urdf/common/mecanum_wheel.urdf.xacro
   double wheel_base_{ 0.4 };       // From rm_description_for_task/urdf/hero/chassis.urdf.xacro
   double wheel_track_{ 0.4 };      // From rm_description_for_task/urdf/hero/chassis.urdf.xacro

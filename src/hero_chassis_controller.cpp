@@ -25,7 +25,9 @@ bool HeroChassisController::init(hardware_interface::EffortJointInterface* hw,
   // Init: Get params from controllers.yaml for basic values and mode
   if (!controller_nh.getParam("publish_rate", publish_rate_) ||
       !controller_nh.getParam("timeout", timeout_) ||
-      !controller_nh.getParam("frame_mode", frame_mode_) || //TODO: base and world
+      !controller_nh.getParam("frame_mode", frame_mode_) ||
+      !controller_nh.getParam("use_velocity_ramp", use_velocity_ramp_) ||
+      !controller_nh.getParam("velocity_ramp_step", velocity_ramp_step_) ||
       !controller_nh.getParam("wheel_radius", wheel_radius_) ||
       !controller_nh.getParam("wheel_base", wheel_base_) ||
       !controller_nh.getParam("wheel_track", wheel_track_))
@@ -76,6 +78,9 @@ bool HeroChassisController::init(hardware_interface::EffortJointInterface* hw,
       (root_nh, "odom", 100);
   odom_pub_->msg_.header.frame_id = "odom";
   odom_pub_->msg_.child_frame_id = "base_link";
+
+  tf2_buffer_ = std::make_unique<tf2_ros::Buffer>();
+  tf2_listener_ = std::make_unique<tf2_ros::TransformListener>(*tf2_buffer_);
   tf2_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>();
 
   cmd_vel_sub_ = root_nh.subscribe<geometry_msgs::Twist::ConstPtr>
@@ -96,6 +101,64 @@ void HeroChassisController::update(const ros::Time& time, const ros::Duration& p
     cmd_vel.linear.x = 0;
     cmd_vel.linear.y = 0;
     cmd_vel.angular.z = 0;
+  }
+
+  // Update: Transform cmd_vel to world under frame_mode_ = "world"
+  if (frame_mode_ == "world")
+  {
+    try
+    {
+      geometry_msgs::TransformStamped tf =
+          tf2_buffer_->lookupTransform("base_link", "odom", ros::Time(0));
+      geometry_msgs::Vector3 cmd_vel_input, cmd_vel_output;
+      cmd_vel_input.x = cmd_vel.linear.x;
+      cmd_vel_input.y = cmd_vel.linear.y;
+      cmd_vel_input.z = cmd_vel.angular.z;
+      tf2::doTransform(cmd_vel_input, cmd_vel_output, tf);
+      cmd_vel.linear.x = cmd_vel_output.x;
+      cmd_vel.linear.y = cmd_vel_output.y;
+      cmd_vel.angular.z = cmd_vel_output.z;
+    }
+    catch (const tf2::TransformException& ex)
+    {
+      cmd_vel.linear.x = 0;
+      cmd_vel.linear.y = 0;
+      cmd_vel.angular.z = 0;
+    }
+  }
+
+  // Update: Velocity ramp
+  if (use_velocity_ramp_)
+  {
+    std::array<double, 3> cmd_vel_input{ cmd_vel.linear.x, cmd_vel.linear.y, cmd_vel.angular.z };
+    double step = velocity_ramp_step_;
+    static std::array<double, 3> last_cmd_vel_output{};
+    for (size_t vel_index = 0; vel_index < 3; vel_index++)
+    {
+      if (vel_index == 2)
+      {
+        step *= 2;
+      }
+      if (cmd_vel_input[vel_index] > last_cmd_vel_output[vel_index])
+      {
+        double vel_out_plus_step = last_cmd_vel_output[vel_index] + step;
+        last_cmd_vel_output[vel_index] =
+            cmd_vel_input[vel_index] >= vel_out_plus_step ? vel_out_plus_step : cmd_vel_input[vel_index];
+      }
+      else if (cmd_vel_input[vel_index] < last_cmd_vel_output[vel_index])
+      {
+        double vel_out_minus_step = last_cmd_vel_output[vel_index] - step;
+        last_cmd_vel_output[vel_index] =
+            cmd_vel_input[vel_index] <= vel_out_minus_step ? vel_out_minus_step : cmd_vel_input[vel_index];
+      }
+      else
+      {
+        last_cmd_vel_output[vel_index] = cmd_vel_input[vel_index];
+      }
+    }
+    cmd_vel.linear.x = last_cmd_vel_output[0];
+    cmd_vel.linear.y = last_cmd_vel_output[1];
+    cmd_vel.angular.z = last_cmd_vel_output[2];
   }
 
   // Update: Mecanum wheel inverse kinematics
