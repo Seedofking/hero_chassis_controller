@@ -21,7 +21,7 @@
 #include <tf2_ros/transform_broadcaster.h>
 #include <geometry_msgs/Twist.h>
 #include <nav_msgs/Odometry.h>
-//#include <Eigen/Dense>  TODO: Turn to matrix
+#include <Eigen/Dense>
 #include <ros/ros.h>
 
 namespace hero_chassis_controller
@@ -36,34 +36,37 @@ public:
 
 private:
   void cmdVelCallback(geometry_msgs::Twist::ConstPtr msg);
-  void switchFrameMode(geometry_msgs::Twist& cmd_vel);
-  void setVelocityRamp(geometry_msgs::Twist& cmd_vel);
-  void moveJoint(std::array<double, 4>& target_wheels_velocity,
-                 std::array<double, 4>& measured_wheels_velocity,
-                 ros::Duration period, geometry_msgs::Twist& cmd_vel);
-  void updateOdom(const std::array<double, 4>& measured_wheels_velocity, ros::Duration period);
-  void publishOdomTf(ros::Time time);
+  void transformToWorldFrame(geometry_msgs::Twist& cmd_vel);
+  void applyVelocityRamp(geometry_msgs::Twist& cmd_vel, ros::Duration period);
+  Eigen::Vector4d computeInverseKinematics(const geometry_msgs::Twist& cmd_vel);
+  void applyPid(Eigen::Vector4d& target_wheels_velocity, ros::Duration period);
+  Eigen::Matrix<double, 3, 1> computeForwardKinematics();
+  void updateOdom(Eigen::Matrix<double, 3, 1>, ros::Duration period);
+  void publishOdomTf(Eigen::Matrix<double, 3, 1>, ros::Time time);
 
   //resource
   std::vector<hardware_interface::JointHandle> joints_;
   std::array<control_toolbox::Pid, 4> pids_;
   realtime_tools::RealtimeBuffer<geometry_msgs::Twist> cmd_vel_buffer_;
-  //Eigen::Matrix<double, 4, 3> jacobian_; TODO: Turn to matrix
+  Eigen::Matrix<double, 4, 3> jacobian_;
   std::unique_ptr<realtime_tools::RealtimePublisher<nav_msgs::Odometry>> odom_pub_;
   std::unique_ptr<tf2_ros::Buffer> tf2_buffer_;
   std::unique_ptr<tf2_ros::TransformListener> tf2_listener_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf2_broadcaster_;
   ros::Subscriber cmd_vel_sub_;
+  std::array<double, 4> measured_wheels_velocity_{};
 
   //config
   double publish_rate_{ 100 };
   double timeout_{ 0.1 };
   std::string frame_mode_{ "base" };
   bool use_velocity_ramp_{ true };
-  double velocity_ramp_step_{ 0.002 };
-  double wheel_radius_{ 0.07625 }; // From rm_description_for_task/urdf/common/mecanum_wheel.urdf.xacro
-  double wheel_base_{ 0.4 };       // From rm_description_for_task/urdf/hero/chassis.urdf.xacro
-  double wheel_track_{ 0.4 };      // From rm_description_for_task/urdf/hero/chassis.urdf.xacro
+  double chassis_velocity_ramp_rate_{ 2 };
+  double chassis_max_velocity_{ 3.9 };
+  double wheel_max_velocity_{ 50 };
+  double wheel_radius_{ 0.07625 };
+  std::array<std::array<double, 3>, 4> poses_{};
+
   enum WheelIndex : size_t
   {
     kLeftFront = 0,
@@ -72,6 +75,19 @@ private:
     kRightBack = 3
   };
 
+  enum PoseIndex : size_t
+  {
+    kPoseX = 0,
+    kPoseY = 1,
+    kPoseRollerAngle = 2
+  };
+
+  enum Vector3dIndex : size_t
+  {
+    kVx = 0,
+    kVy = 1,
+    kWz = 2
+  };
 
   //state
   ros::Time last_cmd_time_;
