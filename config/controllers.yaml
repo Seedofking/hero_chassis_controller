@@ -4,10 +4,10 @@ controller:
     publish_rate: 100
     timeout: 0.5
     frame_mode: world
-    use_velocity_ramp: false
+    use_velocity_ramp: true
     chassis_velocity_ramp_rate: 2
     wheel_max_velocity: 50 #/rm_description_for_task/urdf/chassis.urdf.xacro
-    chassis_max_velocity: 3.9
+    chassis_max_velocity: 3.9 #/chassis_max_velocity = wheel_max_velocity * wheel_radius
     wheel_radius: 0.07625 #/rm_description_for_task/urdf/common/mecanum_wheel.urdf.xacro
     wheel_base: 0.4 #/rm_description_for_task/urdf/hero/chassis.urdf.xacro, pose x = wheel_base / 2
     wheel_track: 0.4  #/rm_description_for_task/urdf/hero/chassis.urdf.xacro, pose y = wheel_track / 2
